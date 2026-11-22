@@ -4,6 +4,7 @@ import com.jacobzp.ums.service.LoginService;
 import com.jacobzp.ums.dto.ErrorResponse;
 import com.jacobzp.ums.dto.LoginRequest;
 import com.jacobzp.ums.dto.LoginResponse;
+import com.jacobzp.ums.security.SessionAttributes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Tag(name = "用户认证")
 public class LoginController {
-    public static final String SESSION_USER_ID = "userId";
     private final LoginService loginService;
 
     public LoginController(LoginService loginService) {
@@ -45,7 +45,7 @@ public class LoginController {
         if (oldSession != null) {
             oldSession.invalidate();
         }
-        servletRequest.getSession(true).setAttribute(SESSION_USER_ID, user.get().getId());
+        servletRequest.getSession(true).setAttribute(SessionAttributes.USER_ID, user.get().getId());
         return ResponseEntity.ok(user.get());
     }
 }

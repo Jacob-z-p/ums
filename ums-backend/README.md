@@ -9,3 +9,4 @@
 - 灵活性差：纪录类不能继承别类，也不能被别类继承
 
 所以，从开发角度，还是直接定义实体类，然后用 `Lombok` 的相关注解就好（比如 `@Data`、`@AllArgsConstructor`、`@NoArgsConstructor`）。
+

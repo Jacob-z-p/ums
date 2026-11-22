@@ -91,7 +91,7 @@ mvn spring-boot:run
 
 实际数据库访问需要正确的连接参数及数据库权限。运行 `mvn test` 执行测试，运行 `mvn package` 打包。
 
-启动后访问 [Knife4j 接口文档](http://localhost:8080/doc.html)，可查看和调试注册、登录接口；OpenAPI JSON 地址为 http://localhost:8080/v3/api-docs。若修改了 `SERVER_PORT`，请相应修改访问地址。项目使用 Springdoc 3 生成文档，并使用 Knife4j OpenAPI 3 界面资源以适配 Spring Boot 4。
+启动后访问 [Knife4j 接口文档](http://localhost:8080/doc.html)，可查看和调试注册、登录和管理员用户管理接口。OpenAPI JSON 地址为 http://localhost:8080/v3/api-docs。若修改了 `SERVER_PORT`，请相应修改访问地址。项目使用 Springdoc 3 生成文档，并使用 Knife4j OpenAPI 3 界面资源以适配 Spring Boot 4。
 
 如需验证真实 MySQL 连接，在设置上述数据库环境变量后运行：
 
@@ -161,7 +161,7 @@ Remove-Item Env:UMS_TEST_MYSQL
 
 登录接口为 `POST /api/user/login`，请求体例如 `{"account":"Alice123","password":"password123"}`。账号和密码的格式要求与注册一致。成功时返回 HTTP 200，响应只包含 `id`、`account`、`nickname`、`avatarUrl` 和 `role`；格式不合法返回 HTTP 400，账号不存在、密码错误、账号禁用或已删除均返回 HTTP 401。
 
-登录成功后，服务器创建 Session 并保存用户 ID，通过 Session Cookie 维持登录态；再次登录会替换原有 Session。Session 使用当前应用实例的内存和容器默认超时时间。前端接入、退出登录和登录态鉴权尚未实现。H2 登录集成测试通过 `mvn test` 运行；上文的真实 MySQL 集成测试也会验证账号大小写不同的登录。
+登录成功后，服务器创建 Session 并保存用户 ID，通过 Session Cookie 维持登录态；再次登录会替换原有 Session。Session 使用当前应用实例的内存和容器默认超时时间，管理接口会在每次请求时检查当前账号的状态和角色。H2 登录集成测试通过 `mvn test` 运行；上文的真实 MySQL 集成测试也会验证账号大小写不同的登录。
 
 接受参数：用户账号、密码
 
@@ -195,7 +195,17 @@ Remove-Item Env:UMS_TEST_MYSQL
 
 ### 用户管理相关接口
 
+先通过 `POST /api/user/login` 登录管理员账号，再在管理请求中携带返回的 `JSESSIONID` Cookie。在同源的 Knife4j 页面上调试时，浏览器会自动携带 Cookie。无有效登录、当前账号禁用或已删除时返回 HTTP 401，普通用户访问管理接口返回 HTTP 403。
 
+- `GET /api/admin/users` 分页查询未删除用户（包括禁用账号）。`account` 可选，按完整登录账号匹配，大小写规则与登录相同。`page` 从 1 开始，默认 1；`size` 默认 20，范围 1–100。结果按 ID 降序，返回 `{items, total, page, size}`。每项包含 `id`、`account`、`nickname`、`avatarUrl`、`role`、`status`、`createdAt` 和 `updatedAt`。没有结果时 `items` 为空数组。
+- `DELETE /api/admin/users/{id}` 逻辑删除普通用户，成功返回 HTTP 204。删除管理员返回 HTTP 403，目标不存在或已删除返回 HTTP 404。被删除账号无法登录，也不能重新注册。
+- 筛选条件、分页参数和用户 ID 无效时返回 HTTP 400。
+
+首个管理员由运维人员在目标数据库中设置。先注册一个账号，再将下方示例中的账号替换为指定账号并执行：
+
+```sql
+UPDATE `user` SET role = 1 WHERE account = 'YourAdminAccount' AND status = 0 AND is_deleted = 0;
+```
 
 
 

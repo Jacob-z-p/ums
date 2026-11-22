@@ -2,7 +2,7 @@ package com.jacobzp.ums;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.jacobzp.ums.controller.LoginController;
+import com.jacobzp.ums.security.SessionAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -51,7 +51,7 @@ class LoginIntegrationTest {
         Map<String, String> inspect(HttpServletRequest request) {
             var session = request.getSession(false);
             if (session == null) return Map.of("exists", "false");
-            return Map.of("exists", "true", "userId", String.valueOf(session.getAttribute(LoginController.SESSION_USER_ID)),
+            return Map.of("exists", "true", "userId", String.valueOf(session.getAttribute(SessionAttributes.USER_ID)),
                     "marker", String.valueOf(session.getAttribute("marker")));
         }
     }

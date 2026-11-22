@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OpenApiIntegrationTest {
@@ -37,5 +38,18 @@ class OpenApiIntegrationTest {
             assertTrue(docs.body().contains(expected), expected);
         }
         assertFalse(docs.body().contains("passwordHash"));
+
+        var spec = new JsonMapper().readTree(docs.body());
+        var list = spec.path("paths").path("/api/admin/users").path("get");
+        var delete = spec.path("paths").path("/api/admin/users/{id}").path("delete");
+        assertEquals("#/components/schemas/AdminUserPage",
+                list.at("/responses/200/content/application~1json/schema/$ref").asText());
+        assertEquals("#/components/schemas/AdminUserResponse",
+                spec.at("/components/schemas/AdminUserPage/properties/items/items/$ref").asText());
+        assertTrue(list.path("security").get(0).has("sessionCookie"));
+        assertTrue(delete.path("security").get(0).has("sessionCookie"));
+        assertEquals("JSESSIONID", spec.at("/components/securitySchemes/sessionCookie/name").asText());
+        assertTrue(delete.path("responses").has("204"));
+        assertTrue(delete.path("responses").has("404"));
     }
 }
