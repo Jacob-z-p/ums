@@ -6,6 +6,8 @@ import com.jacobzp.ums.service.AdminUserService.Access;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+
+import org.jspecify.annotations.NullMarked;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -30,6 +32,7 @@ public class AdminAccessInterceptor implements HandlerInterceptor {
     }
 
     @Override
+    @NullMarked // 明确该方法作用域内的类型默认非空
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
         var session = request.getSession(false);
