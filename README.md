@@ -41,6 +41,7 @@
 - Java 第三方库：
   - `Lombok`：样板代码生成库(get、set)
   - `Junit`：单元测试库
+  - `knife4j`：Swagger 的“增强包”，用于生成“接口文档”
 
 
 ### 部署
@@ -82,23 +83,25 @@ $env:DB_HOST = "localhost"       # 默认 localhost
 $env:DB_PORT = "3306"            # 默认 3306
 $env:DB_NAME = "ums"              # 默认 ums
 $env:DB_USERNAME = "你的数据库用户名" # 默认 root
-$env:DB_PASSWORD = "你的数据库密码" # 默认空密码
+$env:DB_PASSWORD = "你的数据库密码" # 默认 123456
 # $env:SERVER_PORT = "8081"      # 默认 8080；端口被占用时可修改
 cd ums-backend
 mvn spring-boot:run
 ```
 
-访问 http://localhost:8080/api/health 应返回 `{"status":"UP"}`。该接口只验证 Web 服务，不检查数据库连接；实际数据库访问需要正确的连接参数及数据库权限。运行 `mvn test` 执行测试，运行 `mvn package` 打包。
+实际数据库访问需要正确的连接参数及数据库权限。运行 `mvn test` 执行测试，运行 `mvn package` 打包。
+
+启动后访问 [Knife4j 接口文档](http://localhost:8080/doc.html)，可查看和调试注册、登录接口；OpenAPI JSON 地址为 http://localhost:8080/v3/api-docs。若修改了 `SERVER_PORT`，请相应修改访问地址。项目使用 Springdoc 3 生成文档，并使用 Knife4j OpenAPI 3 界面资源以适配 Spring Boot 4。
 
 如需验证真实 MySQL 连接，在设置上述数据库环境变量后运行：
 
 ```powershell
 $env:UMS_TEST_MYSQL = "true"
-mvn '-Dtest=DatabaseIntegrationTest' test
+mvn '-Dtest=RegistrationMysqlIntegrationTest' test
 Remove-Item Env:UMS_TEST_MYSQL
 ```
 
-该集成测试默认跳过，只在显式设置 `UMS_TEST_MYSQL=true` 时连接数据库并执行查询。
+该集成测试默认跳过，只在显式设置 `UMS_TEST_MYSQL=true` 时连接数据库并验证注册；运行前需手动执行用户表建表脚本。
 
 
 ### 框架介绍 / 瘦身
@@ -145,6 +148,54 @@ Remove-Item Env:UMS_TEST_MYSQL
    3. 账户不包含字符
 3. 对密码进行加密（密码不能明文存储到数据库中，加密必须保证不可逆）
 4. 向数据库插入用户数据
+
+注册接口为 `POST /api/user/register`，请求示例：
+
+```json
+{"account":"Alice123","password":"password123"}
+```
+
+账号长度为 1–64 位，仅允许英文字母和数字；密码至少 8 个字符。密码以带随机盐的 PBKDF2 哈希保存，默认昵称为账号。注册成功返回 HTTP 201 和 `{"id":1}`；参数不合法返回 HTTP 400，账号已存在返回 HTTP 409。账号比较不区分大小写，逻辑删除后仍不能重新注册。
+
+### 登录功能
+
+登录接口为 `POST /api/user/login`，请求体例如 `{"account":"Alice123","password":"password123"}`。账号和密码的格式要求与注册一致。成功时返回 HTTP 200，响应只包含 `id`、`account`、`nickname`、`avatarUrl` 和 `role`；格式不合法返回 HTTP 400，账号不存在、密码错误、账号禁用或已删除均返回 HTTP 401。
+
+登录成功后，服务器创建 Session 并保存用户 ID，通过 Session Cookie 维持登录态；再次登录会替换原有 Session。Session 使用当前应用实例的内存和容器默认超时时间。前端接入、退出登录和登录态鉴权尚未实现。H2 登录集成测试通过 `mvn test` 运行；上文的真实 MySQL 集成测试也会验证账号大小写不同的登录。
+
+接受参数：用户账号、密码
+
+请求类型：POST
+
+> 请求参数很长时不建议用 GET
+
+返回值：用户信息（脱敏）
+
+依旧先最小化注册逻辑：
+
+1. 用户在前端输入账号和密码
+2. 校验用户的账号、密码是否符合要求
+   1. 非空
+   2. 密码：不小于 8 位
+   3. 账户不包含字符
+
+3. 校验密码是否输入正确，要和数据库中的密文密码进行对比
+4. 返回用户信息（脱敏）
+5. 记录用户的登录态（Session），存到服务器上（用后端 SpringBoot 框架封装的服务器 Tomcat 去记录）
+6. 返回脱敏后的用户信息
+
+>如何知道是哪个用户登录了？
+>
+>1. 连接服务器之后，会得到一个 session 状态，返回给前端
+>2. 登录成功后，得到了一个登录成功的 session，返回给前端一个设置 cookie 的“命令”
+>3. 前端接收到后端命令后，设置 cookie，保存到浏览器中
+>4. 前端再次请求后端的时候（相同的域名），在请求头中带上 cookie 去请求
+>5. 后端拿到前端传来的 cookie，找到对应的 session
+>6. 后端从 session 中可以取出基于该 session 存储的变量（用户的登录信息、登录名）
+
+### 用户管理相关接口
+
+
 
 
 
