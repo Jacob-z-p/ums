@@ -2,6 +2,8 @@ package com.jacobzp.ums.exception;
 
 import com.jacobzp.ums.model.Result;
 import com.jacobzp.ums.model.ResultCode;
+import jakarta.annotation.Nullable;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -30,8 +32,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @Override
-    protected ResponseEntity<Object> handleExceptionInternal(
-            Exception exception, Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+    @NullMarked
+    protected @Nullable ResponseEntity<Object> handleExceptionInternal(
+            Exception exception, @Nullable Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         Result<Void> result;
         if (status.is5xxServerError()) {
             result = internalError(exception);
