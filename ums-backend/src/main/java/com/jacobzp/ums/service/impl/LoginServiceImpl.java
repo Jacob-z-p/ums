@@ -22,11 +22,33 @@ public class LoginServiceImpl implements LoginService {
     @Override
     public Optional<LoginResponse> login(LoginRequest request) {
         User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getAccount, request.getAccount()));
-        if (user == null || !Integer.valueOf(0).equals(user.getStatus())
+        if (!isActive(user)
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             return Optional.empty();
         }
-        return Optional.of(new LoginResponse(user.getId(), user.getAccount(), user.getNickname(),
-                user.getAvatarUrl(), user.getRole()));
+        return Optional.of(toResponse(user));
+    }
+
+    /**
+     * 根据 userId 查找未禁用的用户
+     * @param userId 用户 ID
+     * @return 登录响应体
+     */
+    @Override
+    public Optional<LoginResponse> findActiveUser(long userId) {
+        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery()
+                .select(User::getId, User::getAccount, User::getNickname, User::getAvatarUrl, User::getRole)
+                .eq(User::getId, userId)
+                .eq(User::getStatus, 0));
+        return Optional.ofNullable(user).map(this::toResponse);
+    }
+
+    private boolean isActive(User user) {
+        return user != null && Integer.valueOf(0).equals(user.getStatus());
+    }
+
+    private LoginResponse toResponse(User user) {
+        return new LoginResponse(user.getId(), user.getAccount(), user.getNickname(),
+                user.getAvatarUrl(), user.getRole());
     }
 }

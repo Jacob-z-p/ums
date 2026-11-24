@@ -35,16 +35,8 @@ public class AdminAccessInterceptor implements HandlerInterceptor {
     @NullMarked // 明确该方法作用域内的类型默认非空
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
-        var session = request.getSession(false);
-        Object sessionUserId = null;
-        if (session != null) {
-            try {
-                sessionUserId = session.getAttribute(SessionAttributes.USER_ID);
-            } catch (IllegalStateException ignored) {
-                // 另一个请求可能已使该会话失效。
-            }
-        }
-        Access access = sessionUserId instanceof Long userId
+        Long userId = SessionAttributes.userId(request);
+        Access access = userId != null
                 ? adminUserService.checkAccess(userId)
                 : Access.UNAUTHENTICATED;
         return switch (access) {

@@ -11,10 +11,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,11 +43,35 @@ public class LoginController {
         if (user.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("账号或密码错误"));
         }
-        HttpSession oldSession = servletRequest.getSession(false);
-        if (oldSession != null) {
-            oldSession.invalidate();
-        }
+        SessionAttributes.invalidate(servletRequest);
         servletRequest.getSession(true).setAttribute(SessionAttributes.USER_ID, user.get().getId());
-        return ResponseEntity.ok(user.get());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(user.get());
+    }
+
+    @GetMapping("/api/user/current")
+    @Operation(summary = "查询当前登录用户", security = @SecurityRequirement(name = "sessionCookie"))
+    @ApiResponse(responseCode = "200", description = "返回脱敏用户信息",
+            content = @Content(schema = @Schema(implementation = LoginResponse.class)))
+    @ApiResponse(responseCode = "401", description = "没有有效会话或账号不可用",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    public ResponseEntity<?> current(HttpServletRequest request) {
+        Long userId = SessionAttributes.userId(request);
+        if (userId != null) {
+            var user = loginService.findActiveUser(userId);
+            if (user.isPresent()) {
+                return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(user.get());
+            }
+            SessionAttributes.invalidate(request);
+        }
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).cacheControl(CacheControl.noStore())
+                .body(new ErrorResponse("请先登录"));
+    }
+
+    @PostMapping("/api/user/logout")
+    @Operation(summary = "退出登录", description = "使当前 Session 失效，允许重复调用。")
+    @ApiResponse(responseCode = "204", description = "已退出", content = @Content)
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        SessionAttributes.invalidate(request);
+        return ResponseEntity.noContent().build();
     }
 }
