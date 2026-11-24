@@ -29,7 +29,7 @@
 - 组件库 Ant Design / Ant Design Pro（现成的管理系统）
 - Umi
 
-## 后端
+### 后端
 
 - Java
 - Spring （依赖注入框架，帮忙管理 Java 对象，还有相关的一些集成）
@@ -62,7 +62,9 @@ npm install
 npm start
 ```
 
-开发服务器默认访问地址为 http://localhost:8000，使用内置 Mock 数据。示例登录账号为 `admin`，密码为 `ant.design`。运行 `npm run build` 可构建生产版本。
+浏览器打开 [用户中心](http://localhost:8000)。`npm start` 默认连接真实后端，Umi 将同源的 `/api` 请求保留原路径转发至 `http://localhost:8080`。如后端使用其他端口，在启动前端的 PowerShell 会话中设置 `$env:UMS_BACKEND_URL = "http://localhost:8081"`。
+
+运行 `npm run build` 可构建生产版本。部署时，静态页面和 `/api` 需通过同一浏览器源访问，`/api` 由部署环境转发至 Spring Boot。静态服务器应将前端路由回退至 `index.html`。
 
 
 
@@ -75,6 +77,8 @@ npm start
 ```sql
 CREATE DATABASE IF NOT EXISTS ums CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+选择 `ums` 数据库并执行 [用户建表脚本](ums-backend/src/main/resources/sql/user.sql)。在后端启动后通过注册页创建首个账号，再按下文「用户管理」的 SQL 将该账号提升为管理员。
 
 在 PowerShell 中设置数据库连接参数后启动（密码仅保存在当前终端会话中）：
 
@@ -93,26 +97,16 @@ mvn spring-boot:run
 
 启动后访问 [Knife4j 接口文档](http://localhost:8080/doc.html)，可查看和调试注册、登录和管理员用户管理接口。OpenAPI JSON 地址为 http://localhost:8080/v3/api-docs。若修改了 `SERVER_PORT`，请相应修改访问地址。项目使用 Springdoc 3 生成文档，并使用 Knife4j OpenAPI 3 界面资源以适配 Spring Boot 4。
 
-如需验证真实 MySQL 连接，在设置上述数据库环境变量后运行：
-
-```powershell
-$env:UMS_TEST_MYSQL = "true"
-mvn '-Dtest=RegistrationMysqlIntegrationTest' test
-Remove-Item Env:UMS_TEST_MYSQL
-```
-
-该集成测试默认跳过，只在显式设置 `UMS_TEST_MYSQL=true` 时连接数据库并验证注册；运行前需手动执行用户表建表脚本。
+真实 MySQL 的浏览器联调步骤见下文「测试」。
 
 
 ### 框架介绍 / 瘦身
 
-前端保留 Umi Max、登录与权限、Mock 和查询表格示例；欢迎页及无关演示已精简。示例数据仅用于开发，尚未接入真实后端。
+前端沿用 Umi Max 的请求、布局和路由权限，业务页面使用 Ant Design 组件。
 
+### 数据库表设计
 
-
-## 数据库表设计
-
-### 用户表
+#### 用户表
 
 目前设计一张 `user` 表，支持账号密码登录、注册和管理员用户管理。建表语句位于 [`ums-backend/src/main/resources/sql/user.sql`](ums-backend/src/main/resources/sql/user.sql)，需在选定的数据库中手动执行，不会随应用启动自动执行。
 
@@ -137,7 +131,9 @@ Remove-Item Env:UMS_TEST_MYSQL
 
 ## 代码实现业务逻辑
 
-### 注册功能
+### 后端实现
+
+#### 注册功能
 
 先最小化注册逻辑：
 
@@ -157,11 +153,14 @@ Remove-Item Env:UMS_TEST_MYSQL
 
 账号长度为 1–64 位，仅允许英文字母和数字；密码至少 8 个字符。密码以带随机盐的 PBKDF2 哈希保存，默认昵称为账号。注册成功返回 HTTP 201 和 `{"id":1}`；参数不合法返回 HTTP 400，账号已存在返回 HTTP 409。账号比较不区分大小写，逻辑删除后仍不能重新注册。
 
-### 登录功能
+#### 登录功能
 
 登录接口为 `POST /api/user/login`，请求体例如 `{"account":"Alice123","password":"password123"}`。账号和密码的格式要求与注册一致。成功时返回 HTTP 200，响应只包含 `id`、`account`、`nickname`、`avatarUrl` 和 `role`；格式不合法返回 HTTP 400，账号不存在、密码错误、账号禁用或已删除均返回 HTTP 401。
 
-登录成功后，服务器创建 Session 并保存用户 ID，通过 Session Cookie 维持登录态；再次登录会替换原有 Session。Session 使用当前应用实例的内存和容器默认超时时间，管理接口会在每次请求时检查当前账号的状态和角色。H2 登录集成测试通过 `mvn test` 运行；上文的真实 MySQL 集成测试也会验证账号大小写不同的登录。
+登录成功后，服务器创建 Session 并保存用户 ID，通过 `JSESSIONID` Cookie 维持登录态。再次登录会替换当前浏览器原有的 Session。Session 使用当前应用实例的内存和容器默认超时时间，管理接口会在每次请求时检查当前账号的状态和角色。
+
+- `GET /api/user/current` 返回与登录接口相同的脱敏字段。Session 无效、账号禁用或已删除时返回 HTTP 401。
+- `POST /api/user/logout` 使当前 Session 失效并返回 HTTP 204，重复调用也返回 HTTP 204。
 
 接受参数：用户账号、密码
 
@@ -193,7 +192,7 @@ Remove-Item Env:UMS_TEST_MYSQL
 >5. 后端拿到前端传来的 cookie，找到对应的 session
 >6. 后端从 session 中可以取出基于该 session 存储的变量（用户的登录信息、登录名）
 
-### 用户管理相关接口
+#### 用户管理
 
 先通过 `POST /api/user/login` 登录管理员账号，再在管理请求中携带返回的 `JSESSIONID` Cookie。在同源的 Knife4j 页面上调试时，浏览器会自动携带 Cookie。无有效登录、当前账号禁用或已删除时返回 HTTP 401，普通用户访问管理接口返回 HTTP 403。
 
@@ -209,8 +208,52 @@ UPDATE `user` SET role = 1 WHERE account = 'YourAdminAccount' AND status = 0 AND
 
 
 
+### 前端实现
+
+- `/user/register` 校验账号、密码和确认密码，注册成功后返回登录页并预填账号。
+- `/user/login` 登录后返回原站内目标，默认进入 `/welcome`。刷新页面时向后端确认会话，退出登录从顶部账号菜单进入。
+- `/admin/users` 仅管理员可访问，支持分页、按完整账号查询及确认删除普通用户。
+
+### 前后端联调相关知识
+
+#### 前后端交互
+
+前端需要向后端发起请求
+
+前端 ajax 来请求后端
+
+axios 封装了 ajax
+
+request 是 ant design 项目又封装了一次
+
+追踪 request 源码：用到了 umi 插件，requestConfig 是一个配置
+
+#### 代理
+
+- 正向代理：替客户端向服务器发送请求
+
+- 反向代理：替服务器接收请求。
+
+- 怎么搞代理：Nginx 服务器、Node.js 服务器 ...
+
+
+
 ## 测试
 
+在 `ums-frontend` 中运行 `npm run lint`、`npm test` 和 `npm run build`。首次运行浏览器测试前执行 `npx playwright install chromium`，再运行 `npm run e2e` 验证页面行为。后端在 `ums-backend` 中执行 `mvn package`。
+
+真实联调使用独立的 MySQL 测试库。新建空数据库，执行用户建表脚本，将后端的 `DB_NAME` 指向此库后启动。注册测试管理员并按上文 SQL 提升其角色。测试会创建独立账号验证注册、分页和逻辑删除。关闭端口 8000 上已有的前端服务，让 Playwright 用当前代理配置启动前端。
+
+```powershell
+cd ums-frontend
+$env:UMS_E2E_ADMIN_ACCOUNT = "YourTestAdminAccount"
+$env:UMS_E2E_ADMIN_PASSWORD = "你的测试管理员密码"
+# 后端若使用非默认端口，在运行测试的会话中指定代理目标
+# $env:UMS_BACKEND_URL = "http://localhost:8081"
+npm run e2e:integration
+```
+
+在 `ums-frontend` 中可用 `npm run e2e:report` 打开默认报告，用 `npx playwright show-report e2e-out/integration-report` 打开真实联调报告。
 
 
 ## 代码提交/评审
