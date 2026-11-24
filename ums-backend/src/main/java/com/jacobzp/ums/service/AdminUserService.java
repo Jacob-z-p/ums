@@ -1,7 +1,7 @@
 package com.jacobzp.ums.service;
 
-import com.jacobzp.ums.dto.AdminUserPage;
-import com.jacobzp.ums.dto.AdminUserQuery;
+import com.jacobzp.ums.model.vo.AdminUserPageVO;
+import com.jacobzp.ums.model.query.AdminUserQuery;
 
 /**
  * <p>
@@ -33,7 +33,7 @@ public interface AdminUserService {
 
     Access checkAccess(long userId);
 
-    AdminUserPage list(AdminUserQuery query);
+    AdminUserPageVO list(AdminUserQuery query);
 
     DeleteResult delete(long id);
 }

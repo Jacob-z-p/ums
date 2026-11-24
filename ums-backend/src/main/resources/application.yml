@@ -11,3 +11,4 @@ server:
 
 springdoc:
   packages-to-scan: com.jacobzp.ums.controller
+  override-with-generic-response: false

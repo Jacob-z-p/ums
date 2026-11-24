@@ -1,4 +1,4 @@
-package com.jacobzp.ums.dto;
+package com.jacobzp.ums.model.vo;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginResponse {
+public class LoginVO {
     @Schema(description = "用户 ID", example = "1")
     private Long id;
     @Schema(description = "账号", example = "Alice123")

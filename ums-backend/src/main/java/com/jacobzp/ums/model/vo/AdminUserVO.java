@@ -1,4 +1,4 @@
-package com.jacobzp.ums.dto;
+package com.jacobzp.ums.model.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
@@ -7,7 +7,7 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class AdminUserResponse {
+public class AdminUserVO {
     private Long id;
     private String account;
     private String nickname;

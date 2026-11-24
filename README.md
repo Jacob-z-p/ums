@@ -131,6 +131,21 @@ mvn spring-boot:run
 
 ## 代码实现业务逻辑
 
+### 统一接口响应
+
+注册、登录、当前用户、退出登录和管理员用户管理接口统一返回 `Result<T>`。例如，注册成功时返回 HTTP 201，响应体为：
+
+```json
+{"code":0,"data":{"id":1},"message":"操作成功","description":""}
+```
+
+`code` 是独立于 HTTP 状态的业务码。成功时为 `0`，`description` 为空字符串。失败时 `data` 为 `null`，`message` 是简短提示，`description` 提供具体原因。退出登录和删除成功也返回 `data: null`。
+
+- `1001` 参数无效（HTTP 400）。
+- `2001` 登录凭据无效（HTTP 401），`2002` 账号已存在（HTTP 409），`2003` 登录态无效（HTTP 401）。
+- `3001` 缺少管理员权限（HTTP 403），`3002` 管理员账号受保护（HTTP 403），`3003` 目标用户不存在或已删除（HTTP 404）。
+- `9000` 服务内部错误（HTTP 500）。
+
 ### 后端实现
 
 #### 注册功能
@@ -151,16 +166,16 @@ mvn spring-boot:run
 {"account":"Alice123","password":"password123"}
 ```
 
-账号长度为 1–64 位，仅允许英文字母和数字；密码至少 8 个字符。密码以带随机盐的 PBKDF2 哈希保存，默认昵称为账号。注册成功返回 HTTP 201 和 `{"id":1}`；参数不合法返回 HTTP 400，账号已存在返回 HTTP 409。账号比较不区分大小写，逻辑删除后仍不能重新注册。
+账号长度为 1–64 位，仅允许英文字母和数字；密码至少 8 个字符。密码以带随机盐的 PBKDF2 哈希保存，默认昵称为账号。注册成功返回 HTTP 201，新用户 ID 位于 `data.id`。参数不合法返回 HTTP 400，账号已存在返回 HTTP 409。账号比较不区分大小写，逻辑删除后仍不能重新注册。
 
 #### 登录功能
 
-登录接口为 `POST /api/user/login`，请求体例如 `{"account":"Alice123","password":"password123"}`。账号和密码的格式要求与注册一致。成功时返回 HTTP 200，响应只包含 `id`、`account`、`nickname`、`avatarUrl` 和 `role`；格式不合法返回 HTTP 400，账号不存在、密码错误、账号禁用或已删除均返回 HTTP 401。
+登录接口为 `POST /api/user/login`，请求体例如 `{"account":"Alice123","password":"password123"}`。账号和密码的格式要求与注册一致。成功时返回 HTTP 200，`data` 包含 `id`、`account`、`nickname`、`avatarUrl` 和 `role`。格式不合法返回 HTTP 400，账号不存在、密码错误、账号禁用或已删除均返回 HTTP 401。
 
 登录成功后，服务器创建 Session 并保存用户 ID，通过 `JSESSIONID` Cookie 维持登录态。再次登录会替换当前浏览器原有的 Session。Session 使用当前应用实例的内存和容器默认超时时间，管理接口会在每次请求时检查当前账号的状态和角色。
 
-- `GET /api/user/current` 返回与登录接口相同的脱敏字段。Session 无效、账号禁用或已删除时返回 HTTP 401。
-- `POST /api/user/logout` 使当前 Session 失效并返回 HTTP 204，重复调用也返回 HTTP 204。
+- `GET /api/user/current` 在 `data` 中返回与登录接口相同的脱敏字段。Session 无效、账号禁用或已删除时返回 HTTP 401。
+- `POST /api/user/logout` 使当前 Session 失效。首次和重复调用均返回 HTTP 200，`data` 为 `null`。
 
 接受参数：用户账号、密码
 
@@ -196,8 +211,8 @@ mvn spring-boot:run
 
 先通过 `POST /api/user/login` 登录管理员账号，再在管理请求中携带返回的 `JSESSIONID` Cookie。在同源的 Knife4j 页面上调试时，浏览器会自动携带 Cookie。无有效登录、当前账号禁用或已删除时返回 HTTP 401，普通用户访问管理接口返回 HTTP 403。
 
-- `GET /api/admin/users` 分页查询未删除用户（包括禁用账号）。`account` 可选，按完整登录账号匹配，大小写规则与登录相同。`page` 从 1 开始，默认 1；`size` 默认 20，范围 1–100。结果按 ID 降序，返回 `{items, total, page, size}`。每项包含 `id`、`account`、`nickname`、`avatarUrl`、`role`、`status`、`createdAt` 和 `updatedAt`。没有结果时 `items` 为空数组。
-- `DELETE /api/admin/users/{id}` 逻辑删除普通用户，成功返回 HTTP 204。删除管理员返回 HTTP 403，目标不存在或已删除返回 HTTP 404。被删除账号无法登录，也不能重新注册。
+- `GET /api/admin/users` 分页查询未删除用户（包括禁用账号）。`account` 可选，按完整登录账号匹配，大小写规则与登录相同。`page` 从 1 开始，默认 1；`size` 默认 20，范围 1–100。结果按 ID 降序，`data` 为 `{items, total, page, size}`。每项包含 `id`、`account`、`nickname`、`avatarUrl`、`role`、`status`、`createdAt` 和 `updatedAt`。没有结果时 `items` 为空数组。
+- `DELETE /api/admin/users/{id}` 逻辑删除普通用户，成功返回 HTTP 200，`data` 为 `null`。删除管理员返回 HTTP 403，目标不存在或已删除返回 HTTP 404。被删除账号无法登录，也不能重新注册。
 - 筛选条件、分页参数和用户 ID 无效时返回 HTTP 400。
 
 首个管理员由运维人员在目标数据库中设置。先注册一个账号，再将下方示例中的账号替换为指定账号并执行：

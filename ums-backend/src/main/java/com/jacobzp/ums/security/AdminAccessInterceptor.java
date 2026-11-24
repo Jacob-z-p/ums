@@ -1,6 +1,7 @@
 package com.jacobzp.ums.security;
 
-import com.jacobzp.ums.dto.ErrorResponse;
+import com.jacobzp.ums.model.Result;
+import com.jacobzp.ums.model.ResultCode;
 import com.jacobzp.ums.service.AdminUserService;
 import com.jacobzp.ums.service.AdminUserService.Access;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,15 +42,17 @@ public class AdminAccessInterceptor implements HandlerInterceptor {
                 : Access.UNAUTHENTICATED;
         return switch (access) {
             case ALLOWED -> true;
-            case UNAUTHENTICATED -> reject(response, HttpStatus.UNAUTHORIZED, "请先登录");
-            case FORBIDDEN -> reject(response, HttpStatus.FORBIDDEN, "需要管理员权限");
+            case UNAUTHENTICATED -> reject(response, HttpStatus.UNAUTHORIZED,
+                    Result.failure(ResultCode.LOGIN_REQUIRED, "当前登录会话无效或账号不可用"));
+            case FORBIDDEN -> reject(response, HttpStatus.FORBIDDEN,
+                    Result.failure(ResultCode.ADMIN_REQUIRED, "当前账号没有管理员权限"));
         };
     }
 
-    private boolean reject(HttpServletResponse response, HttpStatus status, String message) throws IOException {
-        response.setStatus(status.value()); // 设置 HTTP 状态码
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE); // 告诉响应内容是 JSON
-        objectMapper.writeValue(response.getOutputStream(), new ErrorResponse(message)); // 把错误对象转换为 JSON，写入 HTTP 响应体。
+    private boolean reject(HttpServletResponse response, HttpStatus status, Result<Void> result) throws IOException {
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), result);
         return false;
     }
 }

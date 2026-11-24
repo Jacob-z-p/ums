@@ -27,29 +27,56 @@ type UserPage = {
   size: number;
 };
 
+type Result<T> = {
+  code: number;
+  data: T;
+  message: string;
+  description: string;
+};
+
 const options = { skipErrorHandler: true };
 
+function unwrap<T>({ data }: Result<T>): T {
+  return data;
+}
+
 export const register = (data: Credentials) =>
-  request<{ id: number }>('/api/user/register', {
+  request<Result<{ id: number }>>('/api/user/register', {
     ...options,
     method: 'POST',
     data,
-  });
+  }).then(unwrap);
 
 export const login = (data: Credentials) =>
-  request<SessionUser>('/api/user/login', { ...options, method: 'POST', data });
+  request<Result<SessionUser>>('/api/user/login', {
+    ...options,
+    method: 'POST',
+    data,
+  }).then(unwrap);
 
 export const currentUser = () =>
-  request<SessionUser>('/api/user/current', options);
+  request<Result<SessionUser>>('/api/user/current', options).then(unwrap);
 
-export const logout = () =>
-  request<void>('/api/user/logout', { ...options, method: 'POST' });
+export const logout = async () => {
+  await request<Result<null>>('/api/user/logout', {
+    ...options,
+    method: 'POST',
+  });
+};
 
 export const listUsers = (params: UserQuery, signal: AbortSignal) =>
-  request<UserPage>('/api/admin/users', { ...options, params, signal });
+  request<Result<UserPage>>('/api/admin/users', {
+    ...options,
+    params,
+    signal,
+  }).then(unwrap);
 
-export const deleteUser = (id: number) =>
-  request<void>(`/api/admin/users/${id}`, { ...options, method: 'DELETE' });
+export const deleteUser = async (id: number) => {
+  await request<Result<null>>(`/api/admin/users/${id}`, {
+    ...options,
+    method: 'DELETE',
+  });
+};
 
 type ApiError = {
   response?: { status?: number; data?: { message?: unknown } };

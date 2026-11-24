@@ -1,4 +1,4 @@
-package com.jacobzp.ums.service;
+package com.jacobzp.ums.exception;
 
 public class AccountAlreadyExistsException extends RuntimeException {
     public AccountAlreadyExistsException(Throwable cause) {

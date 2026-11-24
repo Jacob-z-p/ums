@@ -2,9 +2,9 @@ package com.jacobzp.ums.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.jacobzp.ums.dto.AdminUserPage;
-import com.jacobzp.ums.dto.AdminUserQuery;
-import com.jacobzp.ums.dto.AdminUserResponse;
+import com.jacobzp.ums.model.vo.AdminUserPageVO;
+import com.jacobzp.ums.model.query.AdminUserQuery;
+import com.jacobzp.ums.model.vo.AdminUserVO;
 import com.jacobzp.ums.entity.User;
 import com.jacobzp.ums.mapper.UserMapper;
 import com.jacobzp.ums.service.AdminUserService;
@@ -45,10 +45,10 @@ public class AdminUserServiceImpl implements AdminUserService {
      * </p>
      * <p>AI目前有点过度实现，目前查询的结果其实只有1条条0条，没有必要分页查询</p>
      * @param query AdminUserQuery
-     * @return AdminUserPage
+     * @return AdminUserPageVO
      */
     @Override
-    public AdminUserPage list(AdminUserQuery query) {
+    public AdminUserPageVO list(AdminUserQuery query) {
         var users = userMapper.selectPage(new Page<>(query.getPage(), query.getSize()), // 编译器可以从上下文中推断出泛型类型是 User，不用写 Page<User>
                 Wrappers.<User>lambdaQuery()
                         .select(User::getId, User::getAccount, User::getNickname, User::getAvatarUrl,
@@ -56,10 +56,10 @@ public class AdminUserServiceImpl implements AdminUserService {
                         .eq(query.getAccount() != null, User::getAccount, query.getAccount())
                         .orderByDesc(User::getId));
         var items = users.getRecords().stream()
-                .map(user -> new AdminUserResponse(user.getId(), user.getAccount(), user.getNickname(),
+                .map(user -> new AdminUserVO(user.getId(), user.getAccount(), user.getNickname(),
                         user.getAvatarUrl(), user.getRole(), user.getStatus(), user.getCreatedAt(), user.getUpdatedAt()))
                 .toList();
-        return new AdminUserPage(items, users.getTotal(), query.getPage(), query.getSize());
+        return new AdminUserPageVO(items, users.getTotal(), query.getPage(), query.getSize());
     }
 
     /**

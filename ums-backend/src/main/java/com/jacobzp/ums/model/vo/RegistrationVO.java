@@ -1,4 +1,4 @@
-package com.jacobzp.ums.dto;
+package com.jacobzp.ums.model.vo;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class ErrorResponse {
-    @Schema(description = "错误信息", example = "账号或密码不符合要求")
-    private String message;
+public class RegistrationVO {
+    @Schema(description = "新用户 ID", example = "1")
+    private Long id;
 }

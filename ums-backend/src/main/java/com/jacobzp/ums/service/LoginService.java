@@ -1,7 +1,7 @@
 package com.jacobzp.ums.service;
 
-import com.jacobzp.ums.dto.LoginRequest;
-import com.jacobzp.ums.dto.LoginResponse;
+import com.jacobzp.ums.model.dto.LoginDTO;
+import com.jacobzp.ums.model.vo.LoginVO;
 import java.util.Optional;
 
 /**
@@ -12,6 +12,6 @@ import java.util.Optional;
  * @version 1.0.0
  */
 public interface LoginService {
-    Optional<LoginResponse> findActiveUser(long userId);
-    Optional<LoginResponse> login(LoginRequest request);
+    Optional<LoginVO> findActiveUser(long userId);
+    Optional<LoginVO> login(LoginDTO request);
 }

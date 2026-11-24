@@ -1,6 +1,6 @@
 package com.jacobzp.ums.service;
 
-import com.jacobzp.ums.dto.RegistrationRequest;
+import com.jacobzp.ums.model.dto.RegistrationDTO;
 
 /**
  * <p>
@@ -10,5 +10,5 @@ import com.jacobzp.ums.dto.RegistrationRequest;
  * @version 1.0.0
  */
 public interface RegistrationService {
-    Long register(RegistrationRequest request);
+    Long register(RegistrationDTO request);
 }

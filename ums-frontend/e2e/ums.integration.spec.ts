@@ -28,7 +28,9 @@ async function registerAccount(request: APIRequestContext, account: string) {
     data: { account, password },
   });
   expect(result.status()).toBe(201);
-  return (await result.json()).id as number;
+  const body = await result.json();
+  expect(body.code).toBe(0);
+  return body.data.id as number;
 }
 
 test('registers and rejects duplicates, validates credentials, and restores a regular session', async ({
@@ -58,12 +60,15 @@ test('registers and rejects duplicates, validates credentials, and restores a re
   await expect(page.getByTestId('welcome-title')).toBeVisible();
   const current = await page.request.get('/api/user/current');
   expect(current.status()).toBe(200);
-  await expect(current.json()).resolves.toEqual({
-    id: expect.any(Number),
-    account,
-    nickname: account,
-    avatarUrl: null,
-    role: 0,
+  await expect(current.json()).resolves.toMatchObject({
+    code: 0,
+    data: {
+      id: expect.any(Number),
+      account,
+      nickname: account,
+      avatarUrl: null,
+      role: 0,
+    },
   });
   expect((await page.request.get('/api/admin/users')).status()).toBe(403);
 
@@ -114,8 +119,8 @@ test('paginates, searches, deletes, and invalidates sessions through the same-or
   const secondPageResult = await secondPage;
   expect(secondPageResult.status()).toBe(200);
   await expect(secondPageResult.json()).resolves.toMatchObject({
-    page: 2,
-    size: 20,
+    code: 0,
+    data: { page: 2, size: 20 },
   });
 
   const accountFilter = page.getByLabel('登录账号');
@@ -134,7 +139,9 @@ test('paginates, searches, deletes, and invalidates sessions through the same-or
   );
   await page.getByRole('button', { name: `删除 ${victim}` }).click();
   await page.getByRole('button', { name: '确认删除' }).click();
-  expect((await removal).status()).toBe(204);
+  const removed = await removal;
+  expect(removed.status()).toBe(200);
+  await expect(removed.json()).resolves.toMatchObject({ code: 0, data: null });
   await expect(page.getByText('未找到用户')).toBeVisible();
 
   expect((await request.get('/api/user/current')).status()).toBe(401);
@@ -148,7 +155,9 @@ test('paginates, searches, deletes, and invalidates sessions through the same-or
   expect(
     (await page.request.delete(`/api/admin/users/${victimId}`)).status(),
   ).toBe(404);
-  const current = await (await page.request.get('/api/user/current')).json();
+  const { data: current } = await (
+    await page.request.get('/api/user/current')
+  ).json();
   expect(current.role).toBe(1);
   expect(
     (await page.request.delete(`/api/admin/users/${current.id}`)).status(),
@@ -168,6 +177,6 @@ test('paginates, searches, deletes, and invalidates sessions through the same-or
     401,
   );
   expect((await request.post('/api/user/logout', { headers })).status()).toBe(
-    204,
+    200,
   );
 });

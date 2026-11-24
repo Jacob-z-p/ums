@@ -2,8 +2,8 @@ package com.jacobzp.ums.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.jacobzp.ums.entity.User;
-import com.jacobzp.ums.dto.LoginRequest;
-import com.jacobzp.ums.dto.LoginResponse;
+import com.jacobzp.ums.model.dto.LoginDTO;
+import com.jacobzp.ums.model.vo.LoginVO;
 import com.jacobzp.ums.mapper.UserMapper;
 import com.jacobzp.ums.service.LoginService;
 import java.util.Optional;
@@ -20,7 +20,7 @@ public class LoginServiceImpl implements LoginService {
     }
 
     @Override
-    public Optional<LoginResponse> login(LoginRequest request) {
+    public Optional<LoginVO> login(LoginDTO request) {
         User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getAccount, request.getAccount()));
         if (!isActive(user)
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
@@ -35,7 +35,7 @@ public class LoginServiceImpl implements LoginService {
      * @return 登录响应体
      */
     @Override
-    public Optional<LoginResponse> findActiveUser(long userId) {
+    public Optional<LoginVO> findActiveUser(long userId) {
         User user = userMapper.selectOne(Wrappers.<User>lambdaQuery()
                 .select(User::getId, User::getAccount, User::getNickname, User::getAvatarUrl, User::getRole)
                 .eq(User::getId, userId)
@@ -47,8 +47,8 @@ public class LoginServiceImpl implements LoginService {
         return user != null && Integer.valueOf(0).equals(user.getStatus());
     }
 
-    private LoginResponse toResponse(User user) {
-        return new LoginResponse(user.getId(), user.getAccount(), user.getNickname(),
+    private LoginVO toResponse(User user) {
+        return new LoginVO(user.getId(), user.getAccount(), user.getNickname(),
                 user.getAvatarUrl(), user.getRole());
     }
 }
