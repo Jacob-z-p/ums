@@ -1,11 +1,7 @@
-/**
- * @see https://umijs.org/docs/max/access#access
- * */
+import type { SessionUser } from '@/services/ums';
+
 export default function access(
-  initialState: { currentUser?: API.CurrentUser } | undefined,
+  initialState: { currentUser?: SessionUser } | undefined,
 ) {
-  const { currentUser } = initialState ?? {};
-  return {
-    canAdmin: currentUser && currentUser.access === 'admin',
-  };
+  return { canAdmin: initialState?.currentUser?.role === 1 };
 }

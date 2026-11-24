@@ -1,19 +1,24 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { FormattedMessage } from '@umijs/max';
-import { Card } from 'antd';
+import { Link, useModel } from '@umijs/max';
+import { Card, Typography } from 'antd';
 import React from 'react';
 
-const Welcome: React.FC = () => (
-  <PageContainer>
-    <Card>
-      <h2 data-testid="welcome-title">
-        <FormattedMessage id="pages.welcome.userCenter" defaultMessage="欢迎使用用户中心" />
-      </h2>
-      <p>
-        <FormattedMessage id="pages.welcome.userCenterDescription" defaultMessage="在这里开始构建用户管理系统。" />
-      </p>
-    </Card>
-  </PageContainer>
-);
-
-export default Welcome;
+export default function Welcome() {
+  const { initialState } = useModel('@@initialState');
+  const user = initialState?.currentUser;
+  return (
+    <PageContainer title="首页">
+      <Card>
+        <Typography.Title level={2} data-testid="welcome-title">
+          欢迎使用用户中心
+        </Typography.Title>
+        {user && (
+          <Typography.Paragraph>
+            当前登录账号 {user.account}
+          </Typography.Paragraph>
+        )}
+        {user?.role === 1 && <Link to="/admin/users">前往用户管理</Link>}
+      </Card>
+    </PageContainer>
+  );
+}

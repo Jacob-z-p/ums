@@ -7,8 +7,6 @@ import proxy from './proxy';
 
 import routes from './routes';
 
-const { UMI_ENV = 'dev' } = process.env;
-
 // Compute commit hash: env vars take precedence, fall back to git at build time
 const commitHash =
   process.env.COMMIT_HASH ||
@@ -81,7 +79,7 @@ export default defineConfig({
    * @doc 代理介绍 https://umijs.org/docs/guides/proxy
    * @doc 代理配置 https://umijs.org/docs/api/config#proxy
    */
-  proxy: proxy[UMI_ENV as keyof typeof proxy],
+  proxy,
   /**
    * @name 快速热更新配置
    * @description 一个不错的热更新组件，更新时可以保留 state
@@ -114,7 +112,7 @@ export default defineConfig({
    * @name layout 插件
    * @doc https://umijs.org/docs/max/layout-menu
    */
-  title: 'Ant Design Pro',
+  title: defaultSettings.title,
   layout: {
     locale: true,
     ...defaultSettings,
@@ -147,6 +145,7 @@ export default defineConfig({
   antd: {
     appConfig: {},
     configProvider: {
+      button: { autoInsertSpace: false },
       variant: 'filled',
       theme: {
         token: {
@@ -209,7 +208,7 @@ export default defineConfig({
   utoopack: {
     devServer: {
       dynamicHmrChunkLists: true,
-      lazyDynamicImports: true,
+      lazyDynamicImports: process.env.UMS_E2E !== '1',
     },
   },
   requestRecord: {},

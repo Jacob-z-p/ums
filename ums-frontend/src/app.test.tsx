@@ -1,146 +1,103 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock all heavy dependencies before importing app
-const mockReplace = vi.fn();
-const mockHistory = {
-  location: {
-    pathname: '/welcome',
-    search: '',
-    hash: '',
+const { history, currentUser } = vi.hoisted(() => ({
+  history: {
+    location: { pathname: '/welcome', search: '', hash: '' },
+    replace: vi.fn(),
   },
-  replace: mockReplace,
-};
-
-const mockQueryCurrentUser = vi.fn();
-
-vi.mock('@umijs/max', () => ({
-  history: mockHistory,
-  Link: ({ children }: any) => children,
+  currentUser: vi.fn(),
 }));
 
-vi.mock('@/services/ant-design-pro/api', () => ({
-  currentUser: mockQueryCurrentUser,
+vi.mock('@umijs/max', () => ({ history, Link: () => null }));
+vi.mock('@/services/ums', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/ums')>()),
+  currentUser,
 }));
-
 vi.mock('@/components', () => ({
   AvatarDropdown: () => null,
-  DocLink: () => null,
-  ErrorBoundary: ({ children }: any) => children,
-  Footer: () => null,
-  LangDropdown: () => null,
+  ErrorBoundary: () => null,
   OfflineBanner: () => null,
-  VersionDropdown: () => null,
 }));
-
-vi.mock('@ant-design/pro-components', () => ({
-  SettingDrawer: () => null,
-}));
-
-vi.mock('@ant-design/icons', () => ({
-  LinkOutlined: () => null,
-}));
-
-vi.mock('./requestErrorConfig', () => ({
-  errorConfig: {},
-}));
-
+vi.mock('@ant-design/pro-components', () => ({ SettingDrawer: () => null }));
+vi.mock('./requestErrorConfig', () => ({ errorConfig: {} }));
 vi.mock('../config/defaultSettings', () => ({
   default: { navTheme: 'light' },
 }));
 
+import { getInitialState } from './app';
+import { safeDestination } from './utils/authNavigation';
+
 describe('app getInitialState', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockHistory.location = {
-      pathname: '/welcome',
-      search: '',
-      hash: '',
+    vi.resetAllMocks();
+    history.location = { pathname: '/welcome', search: '', hash: '' };
+  });
+
+  it('restores the user from the unwrapped session response', async () => {
+    const user = {
+      id: 1,
+      account: 'Alice',
+      nickname: 'Alice',
+      avatarUrl: null,
+      role: 1,
     };
-  });
-
-  it('should fetch currentUser when not on login page', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: {
-        name: 'Test User',
-        access: 'admin',
-      },
+    currentUser.mockResolvedValue(user);
+    expect(await getInitialState()).toMatchObject({
+      currentUser: user,
+      settings: { navTheme: 'light' },
+      settingDrawerOpen: false,
     });
-
-    const state = await getInitialState();
-
-    expect(mockQueryCurrentUser).toHaveBeenCalled();
-    expect(state.currentUser).toEqual({
-      name: 'Test User',
-      access: 'admin',
-    });
-    expect(state.settingDrawerOpen).toBe(false);
-    expect(state.fetchUserInfo).toBeDefined();
+    expect(currentUser).toHaveBeenCalledOnce();
   });
 
-  it('should redirect to login when currentUser fetch fails (401)', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockRejectedValue(new Error('401 Unauthorized'));
-
-    const state = await getInitialState();
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining('/user/login?redirect='),
-    );
-    expect(state.currentUser).toBeUndefined();
-  });
-
-  it('should not fetch currentUser on login page', async () => {
-    const { getInitialState } = await import('./app');
-    mockHistory.location = {
-      pathname: '/user/login',
-      search: '',
-      hash: '',
-    };
-
-    const state = await getInitialState();
-
-    expect(mockQueryCurrentUser).not.toHaveBeenCalled();
-    expect(state.currentUser).toBeUndefined();
-    expect(state.fetchUserInfo).toBeDefined();
-  });
-
-  it('should encode redirect path correctly on 401', async () => {
-    const { getInitialState } = await import('./app');
-    mockHistory.location = {
+  it('redirects an expired session and preserves the requested path', async () => {
+    history.location = {
       pathname: '/admin/users',
       search: '?page=2',
       hash: '#section',
     };
-    mockQueryCurrentUser.mockRejectedValue(new Error('401'));
+    currentUser.mockRejectedValue({ response: { status: 401 } });
 
-    await getInitialState();
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      `/user/login?redirect=${encodeURIComponent('/admin/users?page=2#section')}`,
+    expect((await getInitialState()).currentUser).toBeUndefined();
+    expect(history.replace).toHaveBeenCalledWith(
+      '/user/login?redirect=' +
+        encodeURIComponent('/admin/users?page=2#section'),
     );
   });
 
-  it('should include default settings in initial state', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: { name: 'User' },
-    });
+  it.each(['/user/login', '/user/register'])(
+    'leaves %s public',
+    async (pathname) => {
+      history.location.pathname = pathname;
+      expect((await getInitialState()).currentUser).toBeUndefined();
+      expect(currentUser).not.toHaveBeenCalled();
+      expect(history.replace).not.toHaveBeenCalled();
+    },
+  );
 
-    const state = await getInitialState();
+  it('allows retrying when the session check fails unexpectedly', async () => {
+    currentUser.mockRejectedValue({ response: { status: 503 } });
+    expect(await getInitialState()).toHaveProperty('sessionError');
+    expect(history.replace).not.toHaveBeenCalled();
+  });
+});
 
-    expect(state.settings).toEqual({ navTheme: 'light' });
+describe('login destination', () => {
+  it('keeps the query and fragment of a local destination', () => {
+    expect(safeDestination('/admin/users?account=Alice#list')).toBe(
+      '/admin/users?account=Alice#list',
+    );
   });
 
-  it('fetchUserInfo should return user data on success', async () => {
-    const { getInitialState } = await import('./app');
-    mockQueryCurrentUser.mockResolvedValue({
-      data: { name: 'Fetched User', access: 'user' },
-    });
-
-    const state = await getInitialState();
-
-    const user = await state.fetchUserInfo?.();
-    expect(user).toEqual({ name: 'Fetched User', access: 'user' });
-  });
+  it.each([
+    null,
+    'https://example.com',
+    '//example.com',
+    '/path/..//example.com',
+    '/\\example.com',
+    '/user/login',
+    '/user/%72egister',
+  ])('falls back to the welcome page for %s', (destination) =>
+    expect(safeDestination(destination)).toBe('/welcome'),
+  );
 });
