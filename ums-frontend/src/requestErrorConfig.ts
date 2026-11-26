@@ -2,6 +2,7 @@
 import type { RequestConfig } from '@umijs/max';
 import { getIntl } from '@umijs/max';
 import { message, notification } from 'antd';
+import { appBasePath } from './utils/appBasePath';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -64,7 +65,7 @@ export const errorConfig: RequestConfig = {
               });
               break;
             case ErrorShowType.REDIRECT:
-              window.location.href = '/user/login';
+              window.location.href = `${appBasePath}/user/login`;
               break;
             default:
               message.error(errorMessage);

@@ -46,7 +46,7 @@
 
 ### 部署
 
-部署：服务器 / 容器（平台）
+公网部署使用 Nginx、systemd 和 MySQL，具体步骤见下文「部署」。
 
 
 
@@ -64,7 +64,7 @@ npm start
 
 浏览器打开 [用户中心](http://localhost:8000)。`npm start` 默认连接真实后端，Umi 将同源的 `/api` 请求保留原路径转发至 `http://localhost:8080`。如后端使用其他端口，在启动前端的 PowerShell 会话中设置 `$env:UMS_BACKEND_URL = "http://localhost:8081"`。
 
-运行 `npm run build` 可构建生产版本。部署时，静态页面和 `/api` 需通过同一浏览器源访问，`/api` 由部署环境转发至 Spring Boot。静态服务器应将前端路由回退至 `index.html`。
+运行 `npm run build` 可构建根路径版本。公网版本通过 `UMS_BASE_PATH=/ums/` 构建，使用同源的 `/ums/api/`。构建参数和 Nginx 配置见下文「部署」。
 
 
 
@@ -80,17 +80,26 @@ CREATE DATABASE IF NOT EXISTS ums CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_
 
 选择 `ums` 数据库并执行 [用户建表脚本](ums-backend/src/main/resources/sql/user.sql)。在后端启动后通过注册页创建首个账号，再按下文「用户管理」的 SQL 将该账号提升为管理员。
 
-在 PowerShell 中设置数据库连接参数后启动（密码仅保存在当前终端会话中）：
+在项目根目录用 PowerShell 启动后端。凭据提示使用本地 MySQL 应用账号。Maven 和 Java 从环境变量读取密码，退出后清除当前 PowerShell 会话中的 `DB_PASSWORD`。
 
 ```powershell
 $env:DB_HOST = "localhost"       # 默认 localhost
 $env:DB_PORT = "3306"            # 默认 3306
 $env:DB_NAME = "ums"              # 默认 ums
-$env:DB_USERNAME = "你的数据库用户名" # 默认 root
-$env:DB_PASSWORD = "你的数据库密码" # 默认 123456
-# $env:SERVER_PORT = "8081"      # 默认 8080；端口被占用时可修改
-cd ums-backend
-mvn spring-boot:run
+$umsDbCredential = Get-Credential -Message "请输入本地 MySQL 应用账号和密码"
+# $env:SERVER_PORT = "8081"      # 默认 8080，端口被占用时可修改
+try {
+    if (!$umsDbCredential -or [string]::IsNullOrWhiteSpace($umsDbCredential.UserName) -or !$umsDbCredential.Password.Length) {
+        throw '请输入本地 MySQL 应用账号和密码。'
+    }
+    $env:DB_USERNAME = $umsDbCredential.UserName
+    $env:DB_PASSWORD = $umsDbCredential.GetNetworkCredential().Password
+    cd ums-backend
+    mvn spring-boot:run
+} finally {
+    Remove-Item Env:DB_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Variable umsDbCredential
+}
 ```
 
 实际数据库访问需要正确的连接参数及数据库权限。运行 `mvn test` 执行测试，运行 `mvn package` 打包。
@@ -122,6 +131,9 @@ mvn spring-boot:run
 | `created_at` | `DATETIME` | 非空，默认当前时间 | 创建时间 |
 | `updated_at` | `DATETIME` | 非空，默认当前时间，记录更新时自动更新 | 更新时间 |
 | `is_deleted` | `TINYINT` | 非空，默认 `0` | 逻辑删除：`0` 未删除，`1` 已删除 |
+| `tags` | `JSON` | 非空，默认 `[]` | 用户选中的 PMS 标签 ID 数组，元素为互不重复的正整数 |
+
+已有用户表若缺少 `tags` 字段，手动执行一次 [添加标签字段脚本](ums-backend/src/main/resources/sql/user-add-tags.sql)。
 
 `id` 为主键；`account` 上的唯一索引 `uk_user_account` 防止重复注册，并支持按账号查询。表使用 InnoDB 和 `utf8mb4_unicode_ci` 排序规则：账号比较不区分大小写和重音。逻辑删除不会释放账号，删除后的账号仍不能重新注册。`role`、`status` 和 `is_deleted` 使用检查约束限制为上述取值。
 
@@ -277,7 +289,390 @@ npm run e2e:integration
 
 ## 部署
 
+### 公网入口与拓扑
 
+正式地址为 [用户中心](https://ums.jacobzp.com/ums/)。子域名首页和 `http://公网IP/ums/` 通过 HTTP 308 转到正式地址。`jacobzp.com` 和公网 IP 的原首页继续由原 Nginx 站点提供。
+
+服务器为 Ubuntu 24.04。Nginx 在 80 和 443 端口接收公网流量，托管前端静态文件，并将 `/ums/api/` 同源代理到 `127.0.0.1:8080/api/`。Spring Boot 由 `ums-backend.service` 运行，MySQL 8 监听 `127.0.0.1:3306`。部署目录为 `/opt/ums/releases/<发布编号>/`，`/opt/ums/current` 指向当前版本。
+
+在阿里云云解析 DNS 的 `jacobzp.com` 下添加一条默认线路的 `A` 记录，主机记录为 `ums`，记录值为服务器的 `公网IP`，TTL 可用 600 秒。命令中的 `公网IP` 也替换为服务器的公网 IPv4 地址。公网 TCP 80 用于证书验证和跳转，TCP 443 用于 HTTPS。遇到公网超时，可先在服务器使用 `ss -lnt` 确认监听，再检查云安全组和主机防火墙。 [阿里云 DNS 配置](https://www.alibabacloud.com/help/en/dns/beginner-s-guide)
+
+**2026-11-25 部署记录**。当前服务器版本为 `20261124T161001Z-3c323702`。DNS、证书链和公网 TCP 443 已验证，正式地址返回 HTTP 200，三个入口跳转均通过。注册、登录回跳、刷新、退出和管理员操作已通过公网浏览器验收，验收账号已清理。证书自动续期演练通过。原站点首页内容与发布前一致，公网返回 HTTP 200。启用跳转前的 Nginx 配置备份位于 `/var/backups/ums/nginx-before-redirects-20261124T164713Z/`。
+
+```powershell
+Resolve-DnsName ums.jacobzp.com -Type A
+$umsSshKey = "$env:USERPROFILE/.ssh/你的已授权密钥"
+ssh -o StrictHostKeyChecking=yes -i $umsSshKey root@公网IP
+```
+
+>```bash
+>Resolve-DnsName ums.jacobzp.com -Type A
+>```
+>
+>作用：查询域名的 A 记录，也就是它对应的 IPv4 地址。
+>
+>![](./img/001.png)
+>
+>```bash
+>$umsSshKey = "$env:USERPROFILE/.ssh/你的已授权密钥"
+>```
+>
+>作用：定义一个 PowerShell 变量 `$umsSshKey`，保存 SSH 私钥文件的完整路径。
+>
+>注意：私钥一定不能泄露给别人！
+>
+>```bash
+>ssh -o StrictHostKeyChecking=yes -i $umsSshKey root@公网IP
+>```
+>
+>作用：使用指定私钥，以 root 用户身份 SSH 登录远程服务器
+
+
+
+### 本机构建与上传
+
+在项目根目录运行以下 PowerShell 命令。前端使用 Node.js 22 和锁定的 npm 依赖，后端使用 Java 21 与 Maven 3.9。`UMS_BASE_PATH` 是构建参数，发布时使用带尾斜杠的 `/ums/`。日常开发可直接执行 `npm start`，默认入口仍是 `/`，API 为 `/api`。
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$umsSshKey = "$env:USERPROFILE/.ssh/你的已授权密钥"
+$umsRemote = 'root@公网IP'
+Push-Location ums-frontend
+try {
+    npm ci
+    if ($LASTEXITCODE) { throw 'npm ci 失败' }
+    npm run lint
+    if ($LASTEXITCODE) { throw '前端检查失败' }
+    npm test
+    if ($LASTEXITCODE) { throw '前端测试失败' }
+    $env:UMS_BASE_PATH = '/ums/'
+    npm run build
+    if ($LASTEXITCODE) { throw '前端构建失败' }
+} finally {
+    Remove-Item Env:UMS_BASE_PATH -ErrorAction SilentlyContinue
+    Pop-Location
+}
+
+mvn -B -ntp -f ums-backend/pom.xml package
+if ($LASTEXITCODE) { throw '后端测试或构建失败' }
+
+$umsCommit = (git rev-parse HEAD).Trim()
+$umsRelease = "{0}-{1}" -f (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'), $umsCommit.Substring(0, 8)
+$umsStage = Join-Path ([IO.Path]::GetTempPath()) "ums-release-$umsRelease"
+$umsArchive = "$umsStage.tar.gz"
+New-Item -ItemType Directory -Path $umsStage | Out-Null
+Copy-Item -LiteralPath 'ums-frontend/dist' -Destination (Join-Path $umsStage 'ums') -Recurse
+Copy-Item 'ums-backend/target/ums-backend-0.0.1-SNAPSHOT.jar' (Join-Path $umsStage 'ums-backend.jar')
+Copy-Item 'ums-backend/src/main/resources/sql/user.sql' (Join-Path $umsStage 'user.sql')
+"Base commit: $umsCommit; Front-end base: /ums/" | Set-Content (Join-Path $umsStage 'release.txt')
+tar.exe -czf $umsArchive -C $umsStage .
+if ($LASTEXITCODE) { throw '发布归档打包失败' }
+$umsHash = (Get-FileHash -LiteralPath $umsArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+ssh -o StrictHostKeyChecking=yes -i $umsSshKey $umsRemote 'install -d -m 0700 /root/ums-uploads'
+if ($LASTEXITCODE) { throw '服务器上传目录检查失败' }
+scp -o StrictHostKeyChecking=yes -i $umsSshKey $umsArchive "$($umsRemote):/root/ums-uploads/$umsRelease.tar.gz"
+if ($LASTEXITCODE) { throw '发布归档上传失败' }
+"发布编号 $umsRelease"
+"SHA-256 $umsHash"
+```
+
+登录服务器后，填入本次上传的发布编号和校验值，将归档解压到新目录。先校验归档以及前后端入口，再将目录纳入发布列表。已有版本目录可用来回滚。
+
+```bash
+set -e
+release='填入发布编号'
+digest='填入 SHA-256'
+archive="/root/ums-uploads/$release.tar.gz"
+target="/opt/ums/releases/$release"
+printf '%s  %s\n' "$digest" "$archive" | sha256sum -c -
+install -d -m 0755 /opt/ums/releases
+test ! -e "$target"
+incoming=$(mktemp -d /opt/ums/releases/.incoming.XXXXXX)
+tar -xzf "$archive" -C "$incoming" --no-same-owner --no-same-permissions
+test -s "$incoming/ums/index.html"
+test -s "$incoming/ums-backend.jar"
+test -s "$incoming/user.sql"
+printf '%s\n' "$digest" > "$incoming/archive.sha256"
+find "$incoming" -type d -exec chmod 0755 {} +
+find "$incoming" -type f -exec chmod 0644 {} +
+mv -T "$incoming" "$target"
+```
+
+### 首次初始化数据库和后端服务
+
+在服务器上使用 MySQL 本机管理账号执行。`target` 是上一节解压的版本目录。首次部署时，整段执行下方命令。数据库建表和授权成功后，命令才会创建 root 所有、权限为 `600` 的 `/etc/ums/ums.env`。已部署的实例直接进入版本切换。
+
+```bash
+(
+    set -euo pipefail
+    umask 077
+
+    if [[ -z "${target:-}" || ! -s "$target/user.sql" ]]; then
+        printf '%s\n' '请先解压发布包，并将 target 设置为版本目录。' >&2
+        exit 1
+    fi
+
+    exec 9>/run/lock/ums-deploy.lock
+    flock -n 9
+
+    env_file=/etc/ums/ums.env
+    if [[ -e "$env_file" || -L "$env_file" ]]; then
+        printf '%s\n' '配置文件已存在，首次初始化已停止。' >&2
+        exit 1
+    fi
+
+    app_account_count=$(mysql -NBe "SELECT COUNT(*) FROM mysql.user WHERE User='ums_app' AND Host='127.0.0.1'")
+    user_table_count=$(mysql -NBe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ums' AND table_name='user'")
+    if [[ "$app_account_count" != 0 || "$user_table_count" != 0 ]]; then
+        printf '%s\n' '应用数据库账号或用户表已存在，请先核对部署状态。' >&2
+        exit 1
+    fi
+
+    install -d -m 0700 /etc/ums /var/backups/ums
+    getent passwd ums >/dev/null || \
+        useradd --system --user-group --no-create-home --home-dir /opt/ums --shell /usr/sbin/nologin ums
+
+    db_password=$(openssl rand -hex 32)
+    env_tmp=$(mktemp /etc/ums/.ums-env.XXXXXX)
+    trap 'rm -f -- "$env_tmp"' EXIT
+    cat > "$env_tmp" <<ENV
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=ums
+DB_USERNAME=ums_app
+DB_PASSWORD=$db_password
+SERVER_ADDRESS=127.0.0.1
+SERVER_PORT=8080
+SERVER_FORWARDHEADERSSTRATEGY=framework
+SERVER_SERVLET_SESSION_COOKIE_PATH=/ums/
+SERVER_SERVLET_SESSION_COOKIE_SECURE=true
+SERVER_SERVLET_SESSION_COOKIE_HTTPONLY=true
+SERVER_SERVLET_SESSION_COOKIE_SAMESITE=lax
+SPRINGDOC_APIDOCS_ENABLED=false
+SPRINGDOC_SWAGGERUI_ENABLED=false
+ENV
+
+    mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS ums CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+SQL
+    mysql ums < "$target/user.sql"
+
+    mysql <<SQL
+CREATE USER 'ums_app'@'127.0.0.1' IDENTIFIED BY '$db_password';
+GRANT SELECT, INSERT, UPDATE ON ums.* TO 'ums_app'@'127.0.0.1';
+SQL
+    ln -T -- "$env_tmp" "$env_file"
+)
+```
+
+如果 MySQL 初始化中途失败，先核对应用库、用户表和授权是否已创建，再恢复部署。
+
+将下列内容保存为 `/etc/systemd/system/ums-backend.service`，文件由 root 所有，权限为 `644`。
+
+```ini
+[Unit]
+Description=UMS Spring Boot backend
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=ums
+Group=ums
+EnvironmentFile=/etc/ums/ums.env
+WorkingDirectory=/opt/ums/current
+ExecStart=/usr/bin/java -Xms128m -Xmx384m -jar /opt/ums/current/ums-backend.jar
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+下面的 `switch_release` 可用于首发、更新或回滚。`target` 是上一节解压的版本目录。先记录旧链接，再切换并启动服务。发布由一位运维人员依次完成，避免同时切换版本。
+
+```bash
+switch_release() {
+    test -s "$1/ums/index.html" && test -s "$1/ums-backend.jar" || return 1
+    local swap
+    swap=$(mktemp -d /opt/ums/.switch.XXXXXX)
+    ln -s "$1" "$swap/current"
+    mv -Tf "$swap/current" /opt/ums/current
+    rmdir "$swap"
+}
+
+previous=$(readlink /opt/ums/current || true)
+printf '上一版本 %s\n' "$previous"
+switch_release "$target"
+systemctl daemon-reload
+systemctl restart ums-backend.service
+```
+
+等待启动后，执行 `curl -i http://127.0.0.1:8080/api/user/current`。预期 HTTP 401，业务码 `2003`。再用一个随机且未注册的账号向 `/api/user/login` 发送符合格式的 JSON 请求，预期 HTTP 401，业务码 `2001`，这一步会读取 MySQL。检查通过后设置开机启动。
+
+```bash
+systemctl enable ums-backend.service
+ss -lnt '( sport = :8080 or sport = :3306 )'
+```
+
+### 配置 Nginx、HTTPS 与自动续期
+
+首先安装 `certbot` 并创建验证目录。在 `/etc/nginx/sites-available/ums.jacobzp.com` 写入下方配置中的第一个 `server` 块，暂时把该块 `location /` 内的跳转替换为 `return 404;`。启用站点并重载 Nginx 后，使用 webroot 模式签发正式证书。
+
+```bash
+apt-get update
+apt-get install -y --no-install-recommends certbot
+install -d -m 0755 /var/www/ums-acme/.well-known/acme-challenge
+ln -s /etc/nginx/sites-available/ums.jacobzp.com /etc/nginx/sites-enabled/ums.jacobzp.com
+nginx -t && systemctl reload nginx
+certbot certonly --non-interactive --agree-tos --register-unsafely-without-email \
+    --webroot -w /var/www/ums-acme --cert-name ums.jacobzp.com -d ums.jacobzp.com
+```
+
+证书签发后，补上第二个 `server` 块并运行 `nginx -t && systemctl reload nginx`。在外部网络确认正式地址可访问后，把第一个 `server` 块恢复成下方的 HTTP 跳转配置。
+
+```nginx
+server {
+    listen 80;
+    server_name ums.jacobzp.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/ums-acme;
+        try_files $uri =404;
+    }
+
+    location = / {
+        return 308 https://ums.jacobzp.com/ums/$is_args$args;
+    }
+
+    location = /ums {
+        return 308 https://ums.jacobzp.com/ums/$is_args$args;
+    }
+
+    location / {
+        return 308 https://ums.jacobzp.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ums.jacobzp.com;
+
+    ssl_certificate /etc/letsencrypt/live/ums.jacobzp.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ums.jacobzp.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /opt/ums/current;
+
+    location = / {
+        return 308 https://ums.jacobzp.com/ums/$is_args$args;
+    }
+
+    location = /ums {
+        return 308 https://ums.jacobzp.com/ums/$is_args$args;
+    }
+
+    location = /ums/api {
+        return 404;
+    }
+
+    location ^~ /ums/api/ {
+        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Prefix "";
+        proxy_set_header X-Forwarded-Ssl "";
+        proxy_set_header Forwarded "";
+    }
+
+    location = /ums/ {
+        add_header Cache-Control "no-cache";
+        try_files /ums/index.html =404;
+    }
+
+    location = /ums/index.html {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    location ~* ^/ums/.*\.(css|js|map|ico|png|svg|webp|jpe?g|gif|woff2?|json)$ {
+        try_files $uri =404;
+    }
+
+    location /ums/ {
+        try_files $uri /ums/index.html;
+    }
+
+    location / {
+        return 404;
+    }
+}
+```
+
+在原站点 `/etc/nginx/sites-available/jacobzp` 的 `server` 块内加入以下两段，将 IP 的 UMS 路径转至子域名。修改前，把两个站点的配置备份到 `/var/backups/ums/`，保留带时间戳的文件。每次变更后执行 `nginx -t && systemctl reload nginx`，并复查原站点首页。
+
+```nginx
+    location = /ums {
+        return 308 https://ums.jacobzp.com/ums/$is_args$args;
+    }
+
+    location ^~ /ums/ {
+        return 308 https://ums.jacobzp.com$request_uri;
+    }
+```
+
+把以下内容保存到 `/etc/letsencrypt/renewal-hooks/deploy/ums-nginx`，使用 `chmod 0755` 设为可执行。续期成功后会校验并重载 Nginx。用 `systemctl enable --now certbot.timer` 确认定时器已启动，并用 `certbot renew --cert-name ums.jacobzp.com --dry-run --run-deploy-hooks` 演练续期。
+
+```sh
+#!/bin/sh
+set -eu
+[ "$RENEWED_LINEAGE" = /etc/letsencrypt/live/ums.jacobzp.com ] || exit 0
+/usr/sbin/nginx -t
+/usr/bin/systemctl reload nginx
+```
+
+### 公网验收与首个管理员
+
+在服务器外执行以下 PowerShell 命令，确认 DNS、跳转和证书链均可用。未登录的 API 请求应返回 HTTP 401 和 JSON，登录深链应返回 HTML。
+
+```powershell
+curl.exe --noproxy '*' -I http://公网IP/ums/
+curl.exe --noproxy '*' -I https://ums.jacobzp.com/
+curl.exe --noproxy '*' -I https://ums.jacobzp.com/ums/user/login
+curl.exe --noproxy '*' -i https://ums.jacobzp.com/ums/api/user/current
+curl.exe --noproxy '*' -I http://jacobzp.com/
+```
+
+公网 443 暂不可达时，可在一个终端开启 SSH 转发，并在另一个终端保留正式域名和证书校验来测试 HTTPS。
+
+```powershell
+ssh -N -L 127.0.0.1:18443:127.0.0.1:443 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes -i $umsSshKey root@公网IP
+# 另一个终端
+curl.exe --noproxy '*' --connect-to ums.jacobzp.com:443:127.0.0.1:18443 -i https://ums.jacobzp.com/ums/api/user/current
+```
+
+用浏览器从 `/ums/admin/users` 等深链验证登录回跳、刷新和退出。普通账号访问管理 API 应返回 403，管理员查询应返回 200。登录响应中的 `JSESSIONID` 应为 `Secure`、`HttpOnly`，且 `Path=/ums/`。验收使用单独的临时账号，结束后清理测试数据。
+
+首个正式管理员先在 [注册页](https://ums.jacobzp.com/ums/user/register) 创建自己的账号，再由运维人员在服务器运行 `mysql ums`，将下方示例账号替换为该账号并执行。预期更新一条记录，再登录验证管理权限。
+
+```sql
+UPDATE user
+SET role = 1
+WHERE account = 'YourAdminAccount' AND status = 0 AND is_deleted = 0;
+```
+
+### 更新、日志与回滚
+
+- 日常更新重复构建、上传、校验和解压，记录 `readlink /opt/ums/current` 的输出，再调用 `switch_release "$target"` 并执行 `systemctl restart ums-backend.service`。重启期间 API 可能短暂中断，已有 Session 需要重新登录。
+- 后端故障用 `journalctl -u ums-backend.service -n 100 --no-pager` 查看。Nginx 故障用 `nginx -t`、`/var/log/nginx/error.log` 和 `/var/log/nginx/access.log` 排查。证书故障用 `systemctl list-timers certbot.timer`、`certbot certificates` 和 `/var/log/letsencrypt/letsencrypt.log` 检查。
+- 发布验收失败时，用 `switch_release "$previous"` 恢复上个版本并重启服务。第一次上线若没有上一版本，可停掉 UMS 服务并撤下 UMS 站点及 IP 跳转。若改过 Nginx，恢复对应备份后运行 `nginx -t && systemctl reload nginx`。回滚后重跑公网检查，数据库保留现有数据。
 
 ## 发布
 

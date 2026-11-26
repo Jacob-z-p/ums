@@ -16,5 +16,6 @@ declare module '*.md' {
 declare module 'mockjs';
 
 declare const __APP_VERSION__: string;
+declare const __UMS_BASE_PATH__: string;
 declare const __UMI_VERSION__: string;
 declare const __UTOO_VERSION__: string;

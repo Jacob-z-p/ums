@@ -3,7 +3,7 @@
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
 import defaultSettings from './defaultSettings';
-import proxy from './proxy';
+import { createProxy } from './proxy';
 
 import routes from './routes';
 
@@ -29,7 +29,10 @@ const commitHash =
  * @description 部署时的路径，如果部署在非根目录下，需要配置这个变量
  * @doc https://umijs.org/docs/api/config#publicpath
  */
-const PUBLIC_PATH: string = '/';
+const PUBLIC_PATH = process.env.UMS_BASE_PATH || '/';
+if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(PUBLIC_PATH)) {
+  throw new Error('UMS_BASE_PATH must be / or a path such as /ums/.');
+}
 
 export default defineConfig({
   alias: {
@@ -42,7 +45,9 @@ export default defineConfig({
    */
   hash: true,
 
+  base: PUBLIC_PATH,
   publicPath: PUBLIC_PATH,
+  favicons: [`${PUBLIC_PATH}favicon.ico`],
 
   /**
    * @name 兼容性设置
@@ -79,7 +84,7 @@ export default defineConfig({
    * @doc 代理介绍 https://umijs.org/docs/guides/proxy
    * @doc 代理配置 https://umijs.org/docs/api/config#proxy
    */
-  proxy,
+  proxy: createProxy(PUBLIC_PATH),
   /**
    * @name 快速热更新配置
    * @description 一个不错的热更新组件，更新时可以保留 state
@@ -178,7 +183,7 @@ export default defineConfig({
    */
   headScripts: [
     // 解决首次加载时白屏的问题
-    { src: join(PUBLIC_PATH, 'scripts/loading.js'), async: true },
+    { src: `${PUBLIC_PATH}scripts/loading.js`, async: true },
   ],
 
   //================ pro 插件配置 =================
@@ -212,10 +217,11 @@ export default defineConfig({
     },
   },
   requestRecord: {},
-  exportStatic: {},
+  ...(PUBLIC_PATH === '/' ? { exportStatic: {} } : {}),
   define: {
     'process.env.CI': process.env.CI,
     'process.env.COMMIT_HASH': commitHash,
+    __UMS_BASE_PATH__: PUBLIC_PATH,
     __APP_VERSION__: require('./../package.json').version,
     __UMI_VERSION__: require('@umijs/max/package.json').version,
     __UTOO_VERSION__: require('@utoo/pack/package.json').version,

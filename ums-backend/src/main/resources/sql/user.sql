@@ -10,9 +10,14 @@ CREATE TABLE `user` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `is_deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删除，1-已删除',
+    `tags` JSON NOT NULL DEFAULT (JSON_ARRAY()) COMMENT '用户选中的 PMS 标签 ID 数组',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_user_account` (`account`),
     CONSTRAINT `chk_user_role` CHECK (`role` IN (0, 1)),
     CONSTRAINT `chk_user_status` CHECK (`status` IN (0, 1)),
-    CONSTRAINT `chk_user_is_deleted` CHECK (`is_deleted` IN (0, 1))
+    CONSTRAINT `chk_user_is_deleted` CHECK (`is_deleted` IN (0, 1)),
+    CONSTRAINT `chk_user_tags` CHECK (JSON_SCHEMA_VALID(
+        '{"type":"array","items":{"type":"integer","minimum":1},"uniqueItems":true}',
+        `tags`
+    ))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
